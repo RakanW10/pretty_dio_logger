@@ -1,3 +1,4 @@
+import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -53,6 +54,8 @@ class PrettyDioLogger extends Interceptor {
   /// Enable logPrint
   final bool enabled;
 
+  SendPort? _logSendPort;
+
   /// Default constructor
   PrettyDioLogger({
     this.request = true,
@@ -68,14 +71,31 @@ class PrettyDioLogger extends Interceptor {
     this.enabled = true,
   });
 
+  Future<void> _initializeLogger() async => _logSendPort ??= await _startLoggerIsolate();
+
+  Future<SendPort> _startLoggerIsolate() async {
+    final receivePort = ReceivePort();
+    await Isolate.spawn(_loggerIsolate, receivePort.sendPort);
+    return await receivePort.first as SendPort;
+  }
+
+  void _loggerIsolate(SendPort sendPort) {
+    final receivePort = ReceivePort();
+    sendPort.send(receivePort.sendPort);
+
+    receivePort.listen((message) {
+      logPrint(message);
+    });
+  }
+
   @override
-  void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) async {
+    await _initializeLogger();
+
     final extra = Map.of(options.extra);
     options.extra[_timeStampKey] = DateTime.timestamp().millisecondsSinceEpoch;
 
-    if (!enabled ||
-        (filter != null &&
-            !filter!(options, FilterArgs(false, options.data)))) {
+    if (!enabled || (filter != null && !filter!(options, FilterArgs(false, options.data)))) {
       handler.next(options);
       return;
     }
@@ -119,11 +139,10 @@ class PrettyDioLogger extends Interceptor {
   }
 
   @override
-  void onError(DioException err, ErrorInterceptorHandler handler) {
-    if (!enabled ||
-        (filter != null &&
-            !filter!(
-                err.requestOptions, FilterArgs(true, err.response?.data)))) {
+  void onError(DioException err, ErrorInterceptorHandler handler) async {
+    await _initializeLogger();
+
+    if (!enabled || (filter != null && !filter!(err.requestOptions, FilterArgs(true, err.response?.data)))) {
       handler.next(err);
       return;
     }
@@ -138,15 +157,14 @@ class PrettyDioLogger extends Interceptor {
           diff = DateTime.timestamp().millisecondsSinceEpoch - triggerTime;
         }
         _printBoxed(
-            header:
-                'DioError ║ Status: ${err.response?.statusCode} ${err.response?.statusMessage} ║ Time: $diff ms',
+            header: 'DioError ║ Status: ${err.response?.statusCode} ${err.response?.statusMessage} ║ Time: $diff ms',
             text: uri.toString());
         if (err.response != null && err.response?.data != null) {
-          logPrint('╔ ${err.type.toString()}');
+          _logSendPort?.send('╔ ${err.type.toString()}');
           _printResponse(err.response!);
         }
         _printLine('╚');
-        logPrint('');
+        _logSendPort?.send('');
       } else {
         _printBoxed(header: 'DioError ║ ${err.type}', text: err.message);
       }
@@ -155,11 +173,10 @@ class PrettyDioLogger extends Interceptor {
   }
 
   @override
-  void onResponse(Response response, ResponseInterceptorHandler handler) {
-    if (!enabled ||
-        (filter != null &&
-            !filter!(
-                response.requestOptions, FilterArgs(true, response.data)))) {
+  void onResponse(Response response, ResponseInterceptorHandler handler) async {
+    await _initializeLogger();
+
+    if (!enabled || (filter != null && !filter!(response.requestOptions, FilterArgs(true, response.data)))) {
       handler.next(response);
       return;
     }
@@ -173,25 +190,24 @@ class PrettyDioLogger extends Interceptor {
     _printResponseHeader(response, diff);
     if (responseHeader) {
       final responseHeaders = <String, String>{};
-      response.headers
-          .forEach((k, list) => responseHeaders[k] = list.toString());
+      response.headers.forEach((k, list) => responseHeaders[k] = list.toString());
       _printMapAsTable(responseHeaders, header: 'Headers');
     }
 
     if (responseBody) {
-      logPrint('╔ Body');
-      logPrint('║');
+      _logSendPort?.send('╔ Body');
+      _logSendPort?.send('║');
       _printResponse(response);
-      logPrint('║');
+      _logSendPort?.send('║');
       _printLine('╚');
     }
     handler.next(response);
   }
 
   void _printBoxed({String? header, String? text}) {
-    logPrint('');
-    logPrint('╔╣ $header');
-    logPrint('║  $text');
+    _logSendPort?.send('');
+    _logSendPort?.send('╔╣ $header');
+    _logSendPort?.send('║  $text');
     _printLine('╚');
   }
 
@@ -200,13 +216,13 @@ class PrettyDioLogger extends Interceptor {
       if (response.data is Map) {
         _printPrettyMap(response.data as Map);
       } else if (response.data is Uint8List) {
-        logPrint('║${_indent()}[');
+        _logSendPort?.send('║${_indent()}[');
         _printUint8List(response.data as Uint8List);
-        logPrint('║${_indent()}]');
+        _logSendPort?.send('║${_indent()}]');
       } else if (response.data is List) {
-        logPrint('║${_indent()}[');
+        _logSendPort?.send('║${_indent()}[');
         _printList(response.data as List);
-        logPrint('║${_indent()}]');
+        _logSendPort?.send('║${_indent()}]');
       } else {
         _printBlock(response.data.toString());
       }
@@ -228,27 +244,25 @@ class PrettyDioLogger extends Interceptor {
     _printBoxed(header: 'Request ║ $method ', text: uri.toString());
   }
 
-  void _printLine([String pre = '', String suf = '╝']) =>
-      logPrint('$pre${'═' * maxWidth}$suf');
+  void _printLine([String pre = '', String suf = '╝']) => _logSendPort?.send('$pre${'═' * maxWidth}$suf');
 
   void _printKV(String? key, Object? v) {
     final pre = '╟ $key: ';
     final msg = v.toString();
 
     if (pre.length + msg.length > maxWidth) {
-      logPrint(pre);
+      _logSendPort?.send(pre);
       _printBlock(msg);
     } else {
-      logPrint('$pre$msg');
+      _logSendPort?.send('$pre$msg');
     }
   }
 
   void _printBlock(String msg) {
     final lines = (msg.length / maxWidth).ceil();
     for (var i = 0; i < lines; ++i) {
-      logPrint((i >= 0 ? '║ ' : '') +
-          msg.substring(i * maxWidth,
-              math.min<int>(i * maxWidth + maxWidth, msg.length)));
+      _logSendPort?.send(
+          (i >= 0 ? '║ ' : '') + msg.substring(i * maxWidth, math.min<int>(i * maxWidth + maxWidth, msg.length)));
     }
   }
 
@@ -265,7 +279,7 @@ class PrettyDioLogger extends Interceptor {
     final initialIndent = _indent(tabs);
     tabs++;
 
-    if (isRoot || isListItem) logPrint('║$initialIndent{');
+    if (isRoot || isListItem) _logSendPort?.send('║$initialIndent{');
 
     for (var index = 0; index < data.length; index++) {
       final isLast = index == data.length - 1;
@@ -276,18 +290,18 @@ class PrettyDioLogger extends Interceptor {
       }
       if (value is Map) {
         if (compact && _canFlattenMap(value)) {
-          logPrint('║${_indent(tabs)} $key: $value${!isLast ? ',' : ''}');
+          _logSendPort?.send('║${_indent(tabs)} $key: $value${!isLast ? ',' : ''}');
         } else {
-          logPrint('║${_indent(tabs)} $key: {');
+          _logSendPort?.send('║${_indent(tabs)} $key: {');
           _printPrettyMap(value, initialTab: tabs);
         }
       } else if (value is List) {
         if (compact && _canFlattenList(value)) {
-          logPrint('║${_indent(tabs)} $key: ${value.toString()}');
+          _logSendPort?.send('║${_indent(tabs)} $key: ${value.toString()}');
         } else {
-          logPrint('║${_indent(tabs)} $key: [');
+          _logSendPort?.send('║${_indent(tabs)} $key: [');
           _printList(value, tabs: tabs);
-          logPrint('║${_indent(tabs)} ]${isLast ? '' : ','}');
+          _logSendPort?.send('║${_indent(tabs)} ]${isLast ? '' : ','}');
         }
       } else {
         final msg = value.toString().replaceAll('\n', '');
@@ -297,16 +311,16 @@ class PrettyDioLogger extends Interceptor {
           final lines = (msg.length / linWidth).ceil();
           for (var i = 0; i < lines; ++i) {
             final multilineKey = i == 0 ? "$key:" : "";
-            logPrint(
+            _logSendPort?.send(
                 '║${_indent(tabs)} $multilineKey ${msg.substring(i * linWidth, math.min<int>(i * linWidth + linWidth, msg.length))}');
           }
         } else {
-          logPrint('║${_indent(tabs)} $key: $msg${!isLast ? ',' : ''}');
+          _logSendPort?.send('║${_indent(tabs)} $key: $msg${!isLast ? ',' : ''}');
         }
       }
     }
 
-    logPrint('║$initialIndent}${isListItem && !isLast ? ',' : ''}');
+    _logSendPort?.send('║$initialIndent}${isListItem && !isLast ? ',' : ''}');
   }
 
   void _printList(List list, {int tabs = kInitialTab}) {
@@ -315,7 +329,7 @@ class PrettyDioLogger extends Interceptor {
       final isLast = i == list.length - 1;
       if (element is Map) {
         if (compact && _canFlattenMap(element)) {
-          logPrint('║${_indent(tabs)}  $element${!isLast ? ',' : ''}');
+          _logSendPort?.send('║${_indent(tabs)}  $element${!isLast ? ',' : ''}');
         } else {
           _printPrettyMap(
             element,
@@ -325,7 +339,7 @@ class PrettyDioLogger extends Interceptor {
           );
         }
       } else {
-        logPrint('║${_indent(tabs + 2)} $element${isLast ? '' : ','}');
+        _logSendPort?.send('║${_indent(tabs + 2)} $element${isLast ? '' : ','}');
       }
     }
   }
@@ -334,20 +348,16 @@ class PrettyDioLogger extends Interceptor {
     var chunks = [];
     for (var i = 0; i < list.length; i += chunkSize) {
       chunks.add(
-        list.sublist(
-            i, i + chunkSize > list.length ? list.length : i + chunkSize),
+        list.sublist(i, i + chunkSize > list.length ? list.length : i + chunkSize),
       );
     }
     for (var element in chunks) {
-      logPrint('║${_indent(tabs)} ${element.join(", ")}');
+      _logSendPort?.send('║${_indent(tabs)} ${element.join(", ")}');
     }
   }
 
   bool _canFlattenMap(Map map) {
-    return map.values
-            .where((dynamic val) => val is Map || val is List)
-            .isEmpty &&
-        map.toString().length < maxWidth;
+    return map.values.where((dynamic val) => val is Map || val is List).isEmpty && map.toString().length < maxWidth;
   }
 
   bool _canFlattenList(List list) {
@@ -356,7 +366,7 @@ class PrettyDioLogger extends Interceptor {
 
   void _printMapAsTable(Map? map, {String? header}) {
     if (map == null || map.isEmpty) return;
-    logPrint('╔ $header ');
+    _logSendPort?.send('╔ $header ');
     for (final entry in map.entries) {
       _printKV(entry.key.toString(), entry.value);
     }

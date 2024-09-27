@@ -157,7 +157,7 @@ class PrettyDioLogger extends Interceptor {
           diff = DateTime.timestamp().millisecondsSinceEpoch - triggerTime;
         }
         _printBoxed(
-            header: 'DioError ║ Status: ${err.response?.statusCode} ${err.response?.statusMessage} ║ Time: $diff ms',
+            header: '❌ DioError ║ Status: ${err.response?.statusCode} ${err.response?.statusMessage} ║ Time: $diff ms',
             text: uri.toString());
         if (err.response != null && err.response?.data != null) {
           _logSendPort?.send('╔ ${err.type.toString()}');
@@ -166,7 +166,7 @@ class PrettyDioLogger extends Interceptor {
         _printLine('╚');
         _logSendPort?.send('');
       } else {
-        _printBoxed(header: 'DioError ║ ${err.type}', text: err.message);
+        _printBoxed(header: '❌ DioError ║ ${err.type}', text: err.message);
       }
     }
     handler.next(err);
@@ -234,14 +234,14 @@ class PrettyDioLogger extends Interceptor {
     final method = response.requestOptions.method;
     _printBoxed(
         header:
-            'Response ║ $method ║ Status: ${response.statusCode} ${response.statusMessage}  ║ Time: $responseTime ms',
+            '✅ Response ║ $method ║ Status: ${response.statusCode} ${response.statusMessage}  ║ Time: $responseTime ms',
         text: uri.toString());
   }
 
   void _printRequestHeader(RequestOptions options) {
     final uri = options.uri;
     final method = options.method;
-    _printBoxed(header: 'Request ║ $method ', text: uri.toString());
+    _printBoxed(header: '🚀 Request ║ $method ', text: uri.toString());
   }
 
   void _printLine([String pre = '', String suf = '╝']) => _logSendPort?.send('$pre${'═' * maxWidth}$suf');

@@ -60,7 +60,7 @@ class NetworkPainter {
   /// Filter request/response by [RequestOptions]
   final bool Function(RequestOptions options, FilterArgs args)? filter;
 
-  static void _defaultPaint(Object object) => print(object);
+  static void defaultPaint(Object object) => print(object);
 
   NetworkPainter({
     this.request = true,
@@ -71,7 +71,7 @@ class NetworkPainter {
     this.error = true,
     this.compact = false,
     this.maxWidth = 90,
-    this.paint = _defaultPaint,
+    this.paint = defaultPaint,
     this.filter,
     this.requestEmoji = '🚀',
     this.responseEmoji = '✅',

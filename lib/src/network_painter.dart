@@ -10,6 +10,7 @@ const _timeStampKey = '_pdl_timeStamp_';
 
 /// A class that allows you to paint a network dio object (Request, Response, Error) in a custom way.
 class NetworkPainter {
+  int maxBodyLines = 100; // Default to 100 lines
   /// The function that will be called to paint the object.
   final void Function(Object object) paint;
 
@@ -202,13 +203,6 @@ class NetworkPainter {
     }
   }
 
-  void _paintBlock(String msg) {
-    final lines = (msg.length / maxWidth).ceil();
-    for (var i = 0; i < lines; ++i) {
-      paint((i >= 0 ? '║ ' : '') + msg.substring(i * maxWidth, math.min<int>(i * maxWidth + maxWidth, msg.length)));
-    }
-  }
-
   void _paintMapAsTable(Map? map, {String? header}) {
     if (map == null || map.isEmpty) return;
     paint('╔ $header ');
@@ -255,6 +249,19 @@ class NetworkPainter {
     }
   }
 
+  void _paintBlock(String msg) {
+    final totalLines = (msg.length / maxWidth).ceil();
+    final lines = math.min(totalLines, maxBodyLines); // Limit to maxBodyLines
+
+    for (var i = 0; i < lines; ++i) {
+      paint((i >= 0 ? '║ ' : '') + msg.substring(i * maxWidth, math.min<int>(i * maxWidth + maxWidth, msg.length)));
+    }
+
+    if (totalLines > maxBodyLines) {
+      paint('║ ... (truncated ${totalLines - maxBodyLines} lines)');
+    }
+  }
+
   void _paintPrettyMap(
     Map data, {
     int initialTab = kInitialTab,
@@ -268,6 +275,7 @@ class NetworkPainter {
 
     if (isRoot || isListItem) paint('║$initialIndent{');
 
+    var lineCount = 0;
     for (var index = 0; index < data.length; index++) {
       final isLast = index == data.length - 1;
       final key = '"${data.keys.elementAt(index)}"';
@@ -275,6 +283,12 @@ class NetworkPainter {
       if (value is String) {
         value = '"${value.toString().replaceAll(RegExp(r'([\r\n])+'), " ")}"';
       }
+
+      if (lineCount >= maxBodyLines) {
+        paint('║ ... (truncated remaining lines)');
+        break;
+      }
+
       if (value is Map) {
         if (compact && _canFlattenMap(value)) {
           paint('║${_indent(tabs)} $key: $value${!isLast ? ',' : ''}');
@@ -294,20 +308,26 @@ class NetworkPainter {
         final msg = value.toString().replaceAll('\n', '');
         final indent = _indent(tabs);
         final linWidth = maxWidth - indent.length;
-        if (msg.length + indent.length > linWidth) {
-          final lines = (msg.length / linWidth).ceil();
-          for (var i = 0; i < lines; ++i) {
-            final multilineKey = i == 0 ? "$key:" : "";
-            paint(
-                '║${_indent(tabs)} $multilineKey ${msg.substring(i * linWidth, math.min<int>(i * linWidth + linWidth, msg.length))}');
-          }
-        } else {
-          paint('║${_indent(tabs)} $key: $msg${!isLast ? ',' : ''}');
+        final totalLines = (msg.length / linWidth).ceil();
+
+        for (var i = 0; i < totalLines && lineCount < maxBodyLines; ++i, ++lineCount) {
+          final multilineKey = i == 0 ? "$key:" : "";
+          paint(
+              '║${_indent(tabs)} $multilineKey ${msg.substring(i * linWidth, math.min<int>(i * linWidth + linWidth, msg.length))}');
         }
+      }
+
+      lineCount += 1; // Increase the line count for each key-value pair
+
+      if (lineCount >= maxBodyLines) {
+        paint('║ ... (truncated remaining lines)');
+        break;
       }
     }
 
-    paint('║$initialIndent}${isListItem && !isLast ? ',' : ''}');
+    if (lineCount < maxBodyLines) {
+      paint('║$initialIndent}${isListItem && !isLast ? ',' : ''}');
+    }
   }
 
   void _paintList(List list, {int tabs = kInitialTab}) {

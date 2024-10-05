@@ -10,7 +10,7 @@ class PrettyDioLogger extends Interceptor {
   /// Enable logPrint
   final bool enabled;
 
-  late IsolateLogger _isolateLogger;
+  IsolateLogger? _isolateLogger;
 
   /// Default constructor
   PrettyDioLogger({
@@ -25,43 +25,37 @@ class PrettyDioLogger extends Interceptor {
     void Function(Object) logPrint = NetworkPainter.defaultPaint,
     bool Function(RequestOptions, FilterArgs)? filter,
     this.enabled = true,
-  }) {
-    _isolateLogger = IsolateLogger(
-      NetworkPainter(
-        request: request,
-        requestHeader: requestHeader,
-        requestBody: requestBody,
-        responseHeader: responseHeader,
-        responseBody: responseBody,
-        error: error,
-        compact: compact,
-        paint: logPrint,
-        maxWidth: maxWidth,
-        filter: filter,
-      ),
+  });
+
+  Future<void> _spawnIsolate() async {
+    _isolateLogger = await IsolateLogger.spawn(
+      painter: NetworkPainter(),
     );
   }
 
   @override
-  void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) async {
+    _isolateLogger ?? _spawnIsolate();
     if (enabled) {
-      _isolateLogger.logRequest(options);
+      _isolateLogger?.logRequest(options);
     }
     handler.next(options);
   }
 
   @override
-  void onResponse(Response response, ResponseInterceptorHandler handler) {
+  void onResponse(Response response, ResponseInterceptorHandler handler) async {
+    _isolateLogger ?? _spawnIsolate();
     if (enabled) {
-      _isolateLogger.logResponse(response);
+      _isolateLogger?.logResponse(response);
     }
     handler.next(response);
   }
 
   @override
-  void onError(DioException err, ErrorInterceptorHandler handler) {
+  void onError(DioException err, ErrorInterceptorHandler handler) async {
+    _isolateLogger ?? _spawnIsolate();
     if (enabled) {
-      _isolateLogger.logError(err);
+      _isolateLogger?.logError(err);
     }
     handler.next(err);
   }

@@ -7,14 +7,23 @@ void main() async {
       PrettyDioLogger(
         requestHeader: true,
         requestBody: true,
-        filter: (options, args) {
-          //  return !options.uri.path.contains('posts');
-          return !args.isResponse || !args.hasUint8ListData;
-        },
       ),
     );
   try {
-    await dio.get('https://jsonplaceholder.typicode.com/posts/1');
+    Future.wait(
+      [
+        dio.get('https://jsonplaceholder.typicode.com/posts/1'),
+        dio.get('https://jsonplaceholder.typicode.com/posts/2'),
+        dio.get('https://jsonplaceholder.typicode.com/posts/3'),
+        dio.get('https://jsonplaceholder.typicode.com/posts/4'),
+        dio.get('https://jsonplaceholder.typicode.com/posts/5'),
+        dio.get('https://jsonplaceholder.typicode.com/posts/6'),
+        dio.get('https://jsonplaceholder.typicode.com/posts/7'),
+        dio.get('https://jsonplaceholder.typicode.com/posts/8'),
+        dio.get('https://jsonplaceholder.typicode.com/posts/9'),
+        dio.get('https://jsonplaceholder.typicode.com/posts/10'),
+      ],
+    );
   } catch (e) {
     print(e);
   }
